@@ -1,0 +1,35 @@
+{
+  "schema_version": 1,
+  "package": "saketos-engineering-skills",
+  "version": "0.1.0-prepilot",
+  "activation": "inactive_until_mutating_pilot_prod_verified",
+  "upstream": {
+    "repository": "mattpocock/skills",
+    "commit": "2ab958093e83e0ec752e6c1c5932da465bf23e0c",
+    "license": "MIT"
+  },
+  "governance": {
+    "task_packet_required_for_mutation": true,
+    "active_lease_required_for_mutation": true,
+    "independent_quality_gates_required": true,
+    "parallel_queue_forbidden": true,
+    "automatic_upstream_updates": false
+  },
+  "active_skills": [
+    "diagnosing-bugs",
+    "tdd",
+    "code-review",
+    "domain-modeling",
+    "codebase-design",
+    "prototype",
+    "resolving-merge-conflicts"
+  ],
+  "disabled_skills": [
+    "setup-matt-pocock-skills",
+    "triage",
+    "implement",
+    "wayfinder",
+    "to-spec",
+    "to-tickets"
+  ]
+}
