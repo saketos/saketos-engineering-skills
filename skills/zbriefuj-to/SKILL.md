@@ -87,7 +87,20 @@ Każdą liczbę zapisz z metryczką: **kiedy zmierzona** i **czy to WYMAGANIE
 (ma tak być), czy DIAGNOZA (tak jest dziś)**. Bez tego liczba zestarzeje się
 po cichu i unieważni zapis bez powodu.
 
-Nie masz dostępu do bazy? Napisz to wprost i zostaw miejsce na pomiar.
+### Trzy stany dostępu, nie dwa
+
+Odczyt i zapis to nie to samo uprawnienie. Zapis intake jest przypięty do
+zalogowanego człowieka, więc sesja może umieć zmierzyć wszystko i nie umieć
+zapisać nic. Nazwij swój stan wprost:
+
+| Co masz | Co robisz |
+|---|---|
+| odczyt i zapis | mierzysz i zapisujesz normalnie |
+| **tylko odczyt** | mierzysz, przygotowujesz gotową treść zapisu i mówisz, że zapis wykona sesja z tożsamością Daniela. **Nie mówisz „zapisane".** |
+| brak dostępu | piszesz to wprost i zostawiasz miejsce na pomiar |
+
+Sam odczyt to nie porażka — pomiar zostaje i jest wart tyle samo. Porażką
+jest zapis ogłoszony bez identyfikatora.
 
 ## Krok 5 — zapisz
 
@@ -105,6 +118,17 @@ Zapisz do Centrali jako pomysł, z:
 **Zapis nie oznacza zgody na realizację ani priorytetu.** Nowy pomysł ląduje
 w „wpłynęło" i czeka na decyzję Daniela. Nigdy nie zapisuj, że człowiek coś
 zatwierdził.
+
+### Gdy pomysł wyszedł od Ciebie, a nie od Daniela
+
+Mając dostęp do bazy zauważysz rzeczy, których nikt nie zgłosił. To jest
+przydatne i nie wolno tego wyrzucić — ale cytatu, który to uruchomił, wtedy
+nie ma.
+
+Nie zmyślaj go i nie porzucaj spostrzeżenia. Pokaż je Danielowi jednym
+zdaniem i zapytaj, czy zapisać. **Jego odpowiedź jest cytatem.** Dopóki nie
+odpowiedział, nie zapisujesz, a w pochodzeniu nigdy nie stoi zdanie, którego
+nie powiedział.
 
 ## Krok 6 — powiedz prawdę o wykonaniu
 
@@ -126,8 +150,6 @@ Dwie rzeczy, których nie zrobisz nawet dla HUB-a, i trzeba to powiedzieć:
 
 Oba kroki wykonuje ktoś z dostępem do repozytorium. Wypisz je jako
 **„do zrobienia przy kodzie"**, zamiast udawać, że sprawa jest domknięta.
-
----
 
 ---
 
