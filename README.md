@@ -1,8 +1,8 @@
 # Saketos Engineering Skills
 
-Prywatne, kontrolowane repozytorium skillów inżynierskich Saketos.
+Publiczne repozytorium procedur inżynierskich Saketos. Widoczność zostaje publiczna. Nie umieszczaj tu finansów, danych osobowych, spraw pracowniczych ani sekretów.
 
-Pełny zestaw jest wprowadzany wyłącznie przez Pull Request zgodny z governance Saketos.
+Zmiany wchodzą przez pull request. Dla trzech skilli skopiowanych z konta Claude źródłem prawdy zostaje to konto. Ten plik opisuje układ repozytorium.
 
 ## Układ
 
