@@ -1,0 +1,17 @@
+name: readme
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  opis:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Opis nie nazywa repozytorium prywatnym
+        run: sh scripts/sprawdz-readme.sh README.md
