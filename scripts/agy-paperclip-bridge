@@ -46,19 +46,28 @@ const child = spawn(AGY, agyArgs, { stdio: ["ignore", "pipe", "pipe"] });
 
 let bridgeSignal = null;
 let killTimer = null;
+let childClosed = false;
+
+function markChildClosed() {
+  childClosed = true;
+  if (killTimer) {
+    clearTimeout(killTimer);
+    killTimer = null;
+  }
+}
 
 function handleBridgeSignal(sig) {
   if (bridgeSignal) return;
   bridgeSignal = sig;
-  if (child && !child.killed) {
+  if (child && !childClosed) {
     try {
       child.kill(sig);
     } catch {}
     killTimer = setTimeout(() => {
       try {
-        if (!child.killed) child.kill("SIGKILL");
+        if (!childClosed) child.kill("SIGKILL");
       } catch {}
-    }, 3000);
+    }, 2000);
     if (killTimer.unref) killTimer.unref();
   }
 }
@@ -129,8 +138,9 @@ child.stdout.on("data", (chunk) => {
 
 child.stderr.on("data", (chunk) => process.stderr.write(chunk));
 
+child.on("exit", () => markChildClosed());
 child.on("close", (code, signal) => {
-  if (killTimer) clearTimeout(killTimer);
+  markChildClosed();
 
   // P1: Handle leftover trailing line in buffer if there was no final newline
   if (buf.trim().length > 0) {

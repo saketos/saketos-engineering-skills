@@ -29,11 +29,13 @@ function runTest(name, fakeScriptContent, expectedExitCode, checkOutput) {
   }
 }
 
-async function runAsyncTest(name, fakeScriptContent, action, expectedExitCode, checkOutput) {
+async function runAsyncTest(name, fakeScriptContent, action, expectedExitCode, checkOutput, timeoutMs = 8000) {
   const fakePath = `/tmp/fake-agy-${Date.now()}-${Math.random().toString(36).slice(2)}.sh`;
   fs.writeFileSync(fakePath, fakeScriptContent, { mode: 0o755 });
+  let child = null;
+  let safetyTimer = null;
   try {
-    const child = spawn(BRIDGE, ["--output-format", "stream-json", "--approval-mode", "yolo", "--prompt", "test"], {
+    child = spawn(BRIDGE, ["--output-format", "stream-json", "--approval-mode", "yolo", "--prompt", "test"], {
       env: { ...process.env, AGY_BIN: fakePath },
       stdio: ["ignore", "pipe", "pipe"],
     });
@@ -43,11 +45,21 @@ async function runAsyncTest(name, fakeScriptContent, action, expectedExitCode, c
     child.stdout.on("data", (chunk) => { stdout += chunk.toString("utf8"); });
     child.stderr.on("data", (chunk) => { stderr += chunk.toString("utf8"); });
 
+    const timeoutPromise = new Promise((_, reject) => {
+      safetyTimer = setTimeout(() => {
+        try { child.kill("SIGKILL"); } catch {}
+        reject(new Error(`Test timed out after ${timeoutMs}ms`));
+      }, timeoutMs);
+    });
+
     await action(child);
 
-    const [status, signal] = await new Promise((resolve) => {
+    const closePromise = new Promise((resolve) => {
       child.on("close", (code, sig) => resolve([code, sig]));
     });
+
+    const [status, signal] = await Promise.race([closePromise, timeoutPromise]);
+    if (safetyTimer) clearTimeout(safetyTimer);
 
     const exitOk = status === expectedExitCode;
     const outputOk = checkOutput(stdout, stderr, status, signal);
@@ -60,6 +72,10 @@ async function runAsyncTest(name, fakeScriptContent, action, expectedExitCode, c
     }
     console.log(`PASS: ${name} (exit: ${status})`);
   } finally {
+    if (safetyTimer) clearTimeout(safetyTimer);
+    if (child && !child.killed) {
+      try { child.kill("SIGKILL"); } catch {}
+    }
     try { fs.unlinkSync(fakePath); } catch {}
   }
 }
@@ -152,5 +168,45 @@ done
     !stdout.includes('"result":"cancelled-fixture"')
 );
 
+// Test 7: Bridge escalates to SIGKILL when child ignores SIGTERM (Recenzent P0 requirement)
+let t7Start = 0;
+await runAsyncTest(
+  "Bridge escalates to SIGKILL when child ignores SIGTERM",
+  `#!/usr/bin/env python3
+import signal, time, sys
+signal.signal(signal.SIGTERM, signal.SIG_IGN)
+sys.stderr.write("READY\\n")
+sys.stderr.flush()
+while True:
+    time.sleep(0.05)
+`,
+  async (proc) => {
+    // Wait for child to signal readiness
+    await new Promise((resolve) => {
+      const onData = (data) => {
+        if (data.toString().includes("READY")) {
+          proc.stderr.off("data", onData);
+          resolve();
+        }
+      };
+      proc.stderr.on("data", onData);
+      setTimeout(resolve, 800);
+    });
+    t7Start = Date.now();
+    proc.kill("SIGTERM");
+  },
+  143,
+  (stdout, stderr, code) => {
+    const elapsed = Date.now() - t7Start;
+    return (
+      stdout.includes('"type":"error"') &&
+      stdout.includes("bridge received signal: SIGTERM") &&
+      !stdout.includes('"subtype":"success"') &&
+      elapsed >= 1800 && elapsed <= 5000
+    );
+  }
+);
+
 console.log("\nALL BRIDGE UNIT TESTS PASSED!");
+
 
