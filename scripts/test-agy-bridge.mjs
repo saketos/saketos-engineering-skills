@@ -1,4 +1,4 @@
-import { spawnSync } from "node:child_process";
+import { spawn, spawnSync } from "node:child_process";
 import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
@@ -24,6 +24,41 @@ function runTest(name, fakeScriptContent, expectedExitCode, checkOutput) {
       process.exit(1);
     }
     console.log(`PASS: ${name} (exit: ${res.status})`);
+  } finally {
+    try { fs.unlinkSync(fakePath); } catch {}
+  }
+}
+
+async function runAsyncTest(name, fakeScriptContent, action, expectedExitCode, checkOutput) {
+  const fakePath = `/tmp/fake-agy-${Date.now()}-${Math.random().toString(36).slice(2)}.sh`;
+  fs.writeFileSync(fakePath, fakeScriptContent, { mode: 0o755 });
+  try {
+    const child = spawn(BRIDGE, ["--output-format", "stream-json", "--approval-mode", "yolo", "--prompt", "test"], {
+      env: { ...process.env, AGY_BIN: fakePath },
+      stdio: ["ignore", "pipe", "pipe"],
+    });
+
+    let stdout = "";
+    let stderr = "";
+    child.stdout.on("data", (chunk) => { stdout += chunk.toString("utf8"); });
+    child.stderr.on("data", (chunk) => { stderr += chunk.toString("utf8"); });
+
+    await action(child);
+
+    const [status, signal] = await new Promise((resolve) => {
+      child.on("close", (code, sig) => resolve([code, sig]));
+    });
+
+    const exitOk = status === expectedExitCode;
+    const outputOk = checkOutput(stdout, stderr, status, signal);
+    if (!exitOk || !outputOk) {
+      console.error(`FAIL: ${name}`);
+      console.error(`  Expected exit: ${expectedExitCode}, got: ${status} (signal: ${signal})`);
+      console.error(`  stdout:`, stdout);
+      console.error(`  stderr:`, stderr);
+      process.exit(1);
+    }
+    console.log(`PASS: ${name} (exit: ${status})`);
   } finally {
     try { fs.unlinkSync(fakePath); } catch {}
   }
@@ -92,4 +127,30 @@ exit 0
   }
 );
 
+// Test 6: Bridge terminated by SIGTERM with child emitting SUCCESS on exit
+await runAsyncTest(
+  "Bridge terminated by SIGTERM with child emitting SUCCESS on exit",
+  `#!/bin/sh
+trap 'cat << "EOF"
+{"event":"result","result":{"status":"SUCCESS","response":"cancelled-fixture"}}
+EOF
+exit 0' TERM
+while true; do
+  sleep 0.05
+done
+`,
+  async (proc) => {
+    // Wait for bridge and child to start
+    await new Promise((r) => setTimeout(r, 200));
+    proc.kill("SIGTERM");
+  },
+  143,
+  (stdout, stderr, code) =>
+    stdout.includes('"type":"error"') &&
+    stdout.includes("bridge received signal: SIGTERM") &&
+    !stdout.includes('"subtype":"success"') &&
+    !stdout.includes('"result":"cancelled-fixture"')
+);
+
 console.log("\nALL BRIDGE UNIT TESTS PASSED!");
+

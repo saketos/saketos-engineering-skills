@@ -44,17 +44,28 @@ agyArgs.push("-p", prompt ?? "");
 
 const child = spawn(AGY, agyArgs, { stdio: ["ignore", "pipe", "pipe"] });
 
-process.on("SIGTERM", () => {
-  if (child && !child.killed) {
-    child.kill("SIGTERM");
-  }
-});
+let bridgeSignal = null;
+let killTimer = null;
 
-process.on("SIGINT", () => {
+function handleBridgeSignal(sig) {
+  if (bridgeSignal) return;
+  bridgeSignal = sig;
   if (child && !child.killed) {
-    child.kill("SIGINT");
+    try {
+      child.kill(sig);
+    } catch {}
+    killTimer = setTimeout(() => {
+      try {
+        if (!child.killed) child.kill("SIGKILL");
+      } catch {}
+    }, 3000);
+    if (killTimer.unref) killTimer.unref();
   }
-});
+}
+
+process.on("SIGTERM", () => handleBridgeSignal("SIGTERM"));
+process.on("SIGINT", () => handleBridgeSignal("SIGINT"));
+process.on("SIGHUP", () => handleBridgeSignal("SIGHUP"));
 
 let buf = "";
 let lastText = "";
@@ -119,6 +130,8 @@ child.stdout.on("data", (chunk) => {
 child.stderr.on("data", (chunk) => process.stderr.write(chunk));
 
 child.on("close", (code, signal) => {
+  if (killTimer) clearTimeout(killTimer);
+
   // P1: Handle leftover trailing line in buffer if there was no final newline
   if (buf.trim().length > 0) {
     processLine(buf.trim());
@@ -128,9 +141,18 @@ child.on("close", (code, signal) => {
   // Recenzent requirement P0:
   // "sukces wyłącznie po kompletnym wyniku SUCCESS i prawidłowym zakończeniu;
   // sygnał, brak wyniku i ERROR muszą zakończyć się błędem."
+  // And: "anulowanie samego mostu nadal może zwrócić sukces. Listenery przekazują sygnał,
+  // lecz nie zapamiętują anulowania. Wymagane: zapamiętać sygnał odebrany przez most
+  // i zakończyć błędem również przy łagodnym exit 0 potomka; dodać test tej ścieżki."
+
+  if (bridgeSignal) {
+    const sigCode = bridgeSignal === "SIGTERM" ? 143 : (bridgeSignal === "SIGINT" ? 130 : 129);
+    emit({ type: "error", error: `bridge received signal: ${bridgeSignal}` });
+    process.exit(sigCode);
+  }
 
   if (signal) {
-    const sigCode = signal === "SIGTERM" ? 143 : (signal === "SIGKILL" ? 137 : 128);
+    const sigCode = signal === "SIGTERM" ? 143 : (signal === "SIGKILL" ? 137 : (signal === "SIGINT" ? 130 : 128));
     emit({ type: "error", error: `agy process terminated by signal: ${signal}` });
     process.exit(sigCode);
   }
