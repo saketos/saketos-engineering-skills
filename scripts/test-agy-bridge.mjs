@@ -1,18 +1,24 @@
 import { spawn, spawnSync } from "node:child_process";
 import fs from "node:fs";
+import os from "node:os";
+import assert from "node:assert/strict";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
+const scratch = fs.mkdtempSync(path.join(process.env.PAPERCLIP_RUN_SCRATCH_DIR || os.tmpdir(), "agy-tests-"));
+process.on("exit", () => fs.rmSync(scratch, { recursive: true, force: true }));
 const BRIDGE = path.join(__dirname, "agy-paperclip-bridge");
 
 function runTest(name, fakeScriptContent, expectedExitCode, checkOutput) {
-  const fakePath = `/tmp/fake-agy-${Date.now()}-${Math.random().toString(36).slice(2)}.sh`;
+  const fakePath = path.join(scratch, `fake-agy-${Date.now()}-${Math.random().toString(36).slice(2)}.sh`);
   fs.writeFileSync(fakePath, fakeScriptContent, { mode: 0o755 });
   try {
     const res = spawnSync(BRIDGE, ["--output-format", "stream-json", "--approval-mode", "yolo", "--prompt", "test"], {
       env: { ...process.env, AGY_BIN: fakePath },
       encoding: "utf8",
+      timeout: 5000,
+      killSignal: "SIGKILL",
     });
     const exitOk = res.status === expectedExitCode;
     const outputOk = checkOutput(res.stdout, res.stderr, res.status);
@@ -30,54 +36,56 @@ function runTest(name, fakeScriptContent, expectedExitCode, checkOutput) {
 }
 
 async function runAsyncTest(name, fakeScriptContent, action, expectedExitCode, checkOutput, timeoutMs = 8000) {
-  const fakePath = `/tmp/fake-agy-${Date.now()}-${Math.random().toString(36).slice(2)}.sh`;
+  const fakePath = path.join(scratch, `fake-${Date.now()}.sh`);
   fs.writeFileSync(fakePath, fakeScriptContent, { mode: 0o755 });
-  let child = null;
-  let safetyTimer = null;
+  const child = spawn(BRIDGE, ["--prompt", "test"], {
+    env: { ...process.env, AGY_BIN: fakePath },
+    detached: true,
+    stdio: ["ignore", "pipe", "pipe"],
+  });
+  let stdout = "", stderr = "", safetyTimer;
+  child.stdout.on("data", chunk => { stdout += chunk; });
+  child.stderr.on("data", chunk => { stderr += chunk; });
+  const closed = new Promise((resolve, reject) => {
+    child.on("error", reject);
+    child.on("close", (code, signal) => resolve([code, signal]));
+  });
+  const deadline = new Promise((_, reject) => {
+    safetyTimer = setTimeout(() => reject(new Error(`Test exceeded ${timeoutMs}ms`)), timeoutMs);
+  });
   try {
-    child = spawn(BRIDGE, ["--output-format", "stream-json", "--approval-mode", "yolo", "--prompt", "test"], {
-      env: { ...process.env, AGY_BIN: fakePath },
-      stdio: ["ignore", "pipe", "pipe"],
-    });
-
-    let stdout = "";
-    let stderr = "";
-    child.stdout.on("data", (chunk) => { stdout += chunk.toString("utf8"); });
-    child.stderr.on("data", (chunk) => { stderr += chunk.toString("utf8"); });
-
-    const timeoutPromise = new Promise((_, reject) => {
-      safetyTimer = setTimeout(() => {
-        try { child.kill("SIGKILL"); } catch {}
-        reject(new Error(`Test timed out after ${timeoutMs}ms`));
-      }, timeoutMs);
-    });
-
-    await action(child);
-
-    const closePromise = new Promise((resolve) => {
-      child.on("close", (code, sig) => resolve([code, sig]));
-    });
-
-    const [status, signal] = await Promise.race([closePromise, timeoutPromise]);
-    if (safetyTimer) clearTimeout(safetyTimer);
-
-    const exitOk = status === expectedExitCode;
-    const outputOk = checkOutput(stdout, stderr, status, signal);
-    if (!exitOk || !outputOk) {
-      console.error(`FAIL: ${name}`);
-      console.error(`  Expected exit: ${expectedExitCode}, got: ${status} (signal: ${signal})`);
-      console.error(`  stdout:`, stdout);
-      console.error(`  stderr:`, stderr);
-      process.exit(1);
-    }
-    console.log(`PASS: ${name} (exit: ${status})`);
+    const [status, signal] = await Promise.race([
+      (async () => { await action(child); return closed; })(), deadline,
+    ]);
+    assert.equal(status, expectedExitCode, `${name}: signal=${signal}; ${stderr}`);
+    assert.ok(checkOutput(stdout, stderr, status, signal), `${name}: ${stdout}`);
+    // The fixture publishes its own PID only after installing its TERM handler.
+    const pid = Number(stderr.match(/READY (\d+)/)?.[1]);
+    if (pid) assert.throws(() => process.kill(pid, 0), { code: "ESRCH" });
+    console.log(`PASS: ${name} (exit: ${status}; child cleanup verified)`);
   } finally {
-    if (safetyTimer) clearTimeout(safetyTimer);
-    if (child && !child.killed) {
-      try { child.kill("SIGKILL"); } catch {}
+    clearTimeout(safetyTimer);
+    // A separate process group ensures cleanup also runs on assertion/deadline failure.
+    try { process.kill(-child.pid, "SIGKILL"); } catch (error) {
+      if (error.code !== "ESRCH") throw error;
     }
-    try { fs.unlinkSync(fakePath); } catch {}
+    await closed;
+    fs.unlinkSync(fakePath);
   }
+}
+
+function waitReady(proc) {
+  return new Promise(resolve => {
+    let data = "";
+    const onData = chunk => {
+      data += chunk;
+      if (/READY \d+\n/.test(data)) {
+        proc.stderr.off("data", onData);
+        resolve();
+      }
+    };
+    proc.stderr.on("data", onData);
+  });
 }
 
 // Test 1: Child killed by SIGTERM must exit 143 and emit error, not success
@@ -151,13 +159,13 @@ trap 'cat << "EOF"
 {"event":"result","result":{"status":"SUCCESS","response":"cancelled-fixture"}}
 EOF
 exit 0' TERM
+echo "READY $$" >&2
 while true; do
   sleep 0.05
 done
 `,
   async (proc) => {
-    // Wait for bridge and child to start
-    await new Promise((r) => setTimeout(r, 200));
+    await waitReady(proc);
     proc.kill("SIGTERM");
   },
   143,
@@ -173,25 +181,15 @@ let t7Start = 0;
 await runAsyncTest(
   "Bridge escalates to SIGKILL when child ignores SIGTERM",
   `#!/usr/bin/env python3
-import signal, time, sys
+import signal, time, sys, os
 signal.signal(signal.SIGTERM, signal.SIG_IGN)
-sys.stderr.write("READY\\n")
+sys.stderr.write(f"READY {os.getpid()}\\n")
 sys.stderr.flush()
 while True:
     time.sleep(0.05)
 `,
   async (proc) => {
-    // Wait for child to signal readiness
-    await new Promise((resolve) => {
-      const onData = (data) => {
-        if (data.toString().includes("READY")) {
-          proc.stderr.off("data", onData);
-          resolve();
-        }
-      };
-      proc.stderr.on("data", onData);
-      setTimeout(resolve, 800);
-    });
+    await waitReady(proc);
     t7Start = Date.now();
     proc.kill("SIGTERM");
   },

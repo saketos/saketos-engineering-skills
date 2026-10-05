@@ -1,17 +1,26 @@
 import fs from "node:fs/promises";
 import path from "node:path";
 import os from "node:os";
+import assert from "node:assert/strict";
 import { execute } from "/home/daniel/.paperclip/cli/current/node_modules/@paperclipai/adapter-gemini-local/dist/server/index.js";
 
 async function main() {
-  const root = await fs.mkdtemp(path.join(os.tmpdir(), "paperclip-gemini-timeout-test-"));
+  const root = await fs.mkdtemp(path.join(process.env.PAPERCLIP_RUN_SCRATCH_DIR || os.tmpdir(), "paperclip-gemini-timeout-test-"));
+  let fixturePid;
+  try {
+  const pidFile = path.join(root, "fixture.pid");
   const fakeCommand = path.join(root, "hanging-gemini.sh");
-  await fs.writeFile(fakeCommand, "#!/bin/sh\nsleep 10\n", { mode: 0o755 });
+  await fs.writeFile(fakeCommand, `#!/usr/bin/env python3
+import os, time
+with open(${JSON.stringify(pidFile)}, "w") as f:
+    f.write(str(os.getpid()))
+time.sleep(30)
+`, { mode: 0o755 });
   const workspace = path.join(root, "workspace");
   await fs.mkdir(workspace, { recursive: true });
 
   console.log("=== TEST ADAPTER TIMEOUT (Paperclip gemini_local) ===");
-  console.log("Config: timeoutSec=2, atrapa='sleep 10'");
+  console.log("Config: timeoutSec=2, atrapa='Python sleep 30, PID recorded'");
   const tStart = Date.now();
 
   const result = await execute({
@@ -34,6 +43,7 @@ async function main() {
       command: fakeCommand,
       cwd: workspace,
       timeoutSec: 2,
+      graceSec: 1,
       env: {},
       promptTemplate: "test timeout prompt",
     },
@@ -53,16 +63,21 @@ async function main() {
     durationMs >= 1900 &&
     durationMs <= 4000;
 
-  if (!ok) {
-    console.error("FAIL: Adapter timeout assertions failed!");
-    process.exit(1);
+  assert.ok(ok, "Adapter timeout assertions failed");
+  fixturePid = Number(await fs.readFile(pidFile, "utf8"));
+  assert.ok(Number.isInteger(fixturePid) && fixturePid > 1);
+  assert.throws(() => process.kill(fixturePid, 0), { code: "ESRCH" });
+  console.log(`PASS: timedOut=true, duration=${durationMs}ms, fixture PID ${fixturePid} absent`);
+  } finally {
+    // On failure, recover the PID even when execution/assertions threw early.
+    if (!fixturePid) fixturePid = Number(await fs.readFile(path.join(root, "fixture.pid"), "utf8").catch(() => ""));
+    if (fixturePid > 1) {
+      try { process.kill(fixturePid, "SIGKILL"); } catch (error) {
+        if (error.code !== "ESRCH") throw error;
+      }
+    }
+    await fs.rm(root, { recursive: true, force: true });
   }
-
-  // Cleanup
-  await fs.rm(root, { recursive: true, force: true });
-  console.log("Cleanup: temporary directories and process trees removed.");
-  console.log("PASS: Adapter timeout successfully proven (timedOut: true, errorMessage: 'Timed out after 2s')");
-  process.exit(0);
 }
 
 main().catch((err) => {
