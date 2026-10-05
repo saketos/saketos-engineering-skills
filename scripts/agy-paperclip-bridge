@@ -1,0 +1,172 @@
+#!/usr/bin/env node
+// agy-paperclip-bridge: presents the Gemini CLI non-interactive contract that
+// Paperclip's `gemini_local` adapter (engine=cli) expects, and translates it to
+// the Antigravity CLI (`agy`) arg + NDJSON schema.
+//
+// Incoming (adapter -> bridge):
+//   --output-format stream-json [--model M] --approval-mode yolo
+//   [--sandbox|--sandbox=none] [--resume ID] --prompt P [extra...]
+// Outgoing (bridge -> agy):
+//   --output-format stream-json [--model M] --dangerously-skip-permissions
+//   [--conversation ID] -p P
+// And agy NDJSON -> Gemini-CLI stream-json events understood by parseGeminiJsonl:
+//   {"type":"message","role":"assistant","content":"..."}
+//   {"type":"result","session_id":"...","result":"...","usage":{...}}
+
+import { spawn } from "node:child_process";
+
+const AGY = process.env.AGY_BIN || "/home/daniel/.local/bin/agy";
+const argv = process.argv.slice(2);
+
+let model = null;
+let prompt = null;
+let resume = null;
+const passthrough = [];
+
+for (let i = 0; i < argv.length; i += 1) {
+  const a = argv[i];
+  if (a === "--output-format") { i += 1; continue; }
+  if (a === "--approval-mode") { i += 1; continue; }            // yolo -> agy --dangerously-skip-permissions
+  if (a === "--sandbox") { continue; }                           // agy default = no sandbox
+  if (a.startsWith("--sandbox=")) { continue; }
+  if (a === "--model") { model = argv[++i] ?? null; continue; }
+  if (a === "--prompt" || a === "-p") { prompt = argv[++i] ?? ""; continue; }
+  if (a === "--resume") { resume = argv[++i] ?? null; continue; }
+  passthrough.push(a);
+}
+
+const agyArgs = ["--output-format", "stream-json"];
+if (model && model !== "auto") agyArgs.push("--model", model);
+agyArgs.push("--dangerously-skip-permissions");
+if (resume) agyArgs.push("--conversation", resume);
+for (const a of passthrough) agyArgs.push(a);
+agyArgs.push("-p", prompt ?? "");
+
+const child = spawn(AGY, agyArgs, { stdio: ["ignore", "pipe", "pipe"] });
+
+process.on("SIGTERM", () => {
+  if (child && !child.killed) {
+    child.kill("SIGTERM");
+  }
+});
+
+process.on("SIGINT", () => {
+  if (child && !child.killed) {
+    child.kill("SIGINT");
+  }
+});
+
+let buf = "";
+let lastText = "";
+let conversationId = null;
+let resultUsage = null;
+let resultStatus = null;
+let resultError = null;
+
+function emit(obj) { process.stdout.write(JSON.stringify(obj) + "\n"); }
+
+function processLine(line) {
+  const trimmed = line.trim();
+  if (!trimmed) return;
+  let ev;
+  try { ev = JSON.parse(trimmed); } catch { return; }
+  if (ev.event === "init" && ev.init) {
+    conversationId = ev.conversation_id ?? conversationId;
+    return;
+  }
+  if (ev.event === "step_update" && ev.step_update) {
+    const s = ev.step_update;
+    if (s.conversation_id) conversationId = s.conversation_id;
+    if (s.step_type === "agent_response" && typeof s.text_delta === "string" && s.text_delta.length > 0) {
+      lastText += s.text_delta;
+    }
+    return;
+  }
+  if (ev.event === "result" && ev.result) {
+    const r = ev.result;
+    conversationId = r.conversation_id ?? conversationId;
+    resultStatus = r.status ?? null;
+    if (r.usage && typeof r.usage === "object") {
+      resultUsage = {
+        input_tokens: r.usage.input_tokens ?? 0,
+        output_tokens: r.usage.output_tokens ?? 0,
+        cached_input_tokens: r.usage.cache_read_tokens ?? r.usage.cached_input_tokens ?? 0,
+        total_tokens: r.usage.total_tokens ?? 0,
+      };
+    }
+    if (r.status && r.status !== "SUCCESS") {
+      resultError = r.error ?? r.message ?? `agy status=${r.status}`;
+    }
+    if (typeof r.response === "string" && r.response.length > 0) lastText = r.response;
+    return;
+  }
+  if (ev.event === "error" || ev.error) {
+    resultError = ev.error ?? ev.message ?? "agy error";
+    return;
+  }
+}
+
+child.stdout.on("data", (chunk) => {
+  buf += chunk.toString("utf8");
+  let nl;
+  while ((nl = buf.indexOf("\n")) >= 0) {
+    const line = buf.slice(0, nl);
+    buf = buf.slice(nl + 1);
+    processLine(line);
+  }
+});
+
+child.stderr.on("data", (chunk) => process.stderr.write(chunk));
+
+child.on("close", (code, signal) => {
+  // P1: Handle leftover trailing line in buffer if there was no final newline
+  if (buf.trim().length > 0) {
+    processLine(buf.trim());
+    buf = "";
+  }
+
+  // Recenzent requirement P0:
+  // "sukces wyłącznie po kompletnym wyniku SUCCESS i prawidłowym zakończeniu;
+  // sygnał, brak wyniku i ERROR muszą zakończyć się błędem."
+
+  if (signal) {
+    const sigCode = signal === "SIGTERM" ? 143 : (signal === "SIGKILL" ? 137 : 128);
+    emit({ type: "error", error: `agy process terminated by signal: ${signal}` });
+    process.exit(sigCode);
+  }
+
+  if (code !== 0 && code !== null) {
+    const err = resultError ? String(resultError) : `agy process exited with code ${code}`;
+    emit({ type: "error", error: err });
+    process.exit(code);
+  }
+
+  if (resultError) {
+    emit({ type: "error", error: String(resultError) });
+    process.exit(code && code !== 0 ? code : 1);
+  }
+
+  if (resultStatus !== "SUCCESS") {
+    const err = resultStatus ? `agy did not succeed (status=${resultStatus})` : "agy terminated without returning a SUCCESS result";
+    emit({ type: "error", error: err });
+    process.exit(1);
+  }
+
+  // Only emit SUCCESS when resultStatus === "SUCCESS", no signal, no error, exit code 0
+  const text = lastText.replace(/\s+$/, "");
+  if (text) emit({ type: "message", role: "assistant", content: text });
+  emit({
+    type: "result",
+    subtype: "success",
+    session_id: conversationId,
+    result: text,
+    response: text,
+    ...(resultUsage ? { usage: resultUsage } : {}),
+  });
+  process.exit(0);
+});
+
+child.on("error", (err) => {
+  emit({ type: "error", error: err?.message ?? String(err) });
+  process.exit(127);
+});
