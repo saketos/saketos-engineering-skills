@@ -1,5 +1,5 @@
 ---
-name: saketos-data-context
+name: "saketos-data-context"
 description: "Kontekst danych analitycznych Saketos - ID projektu BigQuery, mapowanie property GA4 na domeny, ID projektów Ahrefs/GSC, stan pipeline'ów i gotowe zapytania. Uzywaj ZAWSZE, gdy pytanie dotyczy danych Saketos: SEO, ruchu, sprzedazy, konwersji, Ahrefs, Google Search Console, GA4, BigQuery, Google Ads, wynikow sklepu (saketos.pl/.de/.fr/.it/.es/.at/.nl/.be/.cz/.dk/.co.uk/.eu/.com, ie.saketos.com, dekor-hurt.pl, e-dekoration.de). Uruchamiaj takze przy pytaniach typu \"jak nam idzie w Niemczech\", \"przeanalizuj SEO\", \"sprawdz konwersje\", \"porownaj rynki\", \"ile sprzedalismy organicznie\"."
 ---
 
@@ -16,30 +16,33 @@ i marnuje na to kilka wywolan narzedzi.
 3. `references/ahrefs.md` - jak korzystac z Ahrefs MCP dla Saketos, znane pulapki.
 4. `references/baseline-de.md` - baseline SEO dla saketos.de (stan lipiec 2026), do porownan YoY.
 
-## Pulapka 0: dwa datasety GSC o mylacych nazwach (zweryfikowane 18.09.2026)
+## Pulapka 0: gdzie sa dane GSC i GA4 (zweryfikowane 15.10.2026)
 
-W projekcie `automatyzacje-saketos` sa dwa datasety z danymi Airbyte. Rozniaca sie jedna
-nazwa kosztowala juz jedna bledna diagnoze "pipeline nie dziala".
+W projekcie `automatyzacje-saketos` jest jeden zywy dataset z danymi Airbyte: **`airbyte`** (EU).
+Ma `GSC_search_analytics_all_fields`, `GSC_search_analytics_by_date`, `GSC_sites`,
+**`GSC_search_analytics_by_query`** (dane od 09.05.2025) i **`GSC_search_analytics_by_page`**,
+a takze `GADS_*`, `META_*`, `BING_*`, `ERP_ORDERS_Metabase_Orders`, `SUPABASE_*`.
 
-| dataset | stan | co ma |
-|---|---|---|
-| **`airbyte`** | **ZYWY** - dane do 15.09.2026, zaciag 17.09 19:11 | `GSC_search_analytics_all_fields`, `GSC_search_analytics_by_date`, `GSC_sites`, `GADS_*`, `META_*`, `BING_*`, `ERP_ORDERS_Metabase_Orders`, `SUPABASE_*` |
-| `automatyzacje_saketos_airbyte` | ZAMROZONY 21.07.2026 | to samo **plus** `GSC_search_analytics_by_query`, `by_page`, `by_device` |
+Dawny zamrozony dataset `automatyzacje_saketos_airbyte` (stan do 21.07.2026) **juz nie istnieje**;
+zlecenie Krzysztofa z 18.09.2026 na dolozenie `by_query` i `by_page` do zywego pipeline'u jest
+wykonane. Tabeli `by_device` w zywym datasecie nie ma.
 
-Z tego wynikaja trzy rzeczy:
+Z tego wynikaja cztery rzeczy:
 
-- **Analiza per fraza i per strona jest mozliwa tylko na zamrozonym datasecie** (dane do
-  21.07.2026) albo na `all_fields`, ktory przez anonimizacje GSC pokazuje ok. 27%
-  rzeczywistych klikniec. Zawsze napisz, z ktorego zrodla pochodza liczby i do jakiej daty.
+- **Analiza per fraza i per strona** idzie na `airbyte.GSC_search_analytics_by_query` i `by_page`.
+  Zawsze napisz, z ktorego zrodla pochodza liczby i do jakiej daty.
 - **Swiezosc sprawdzaj zapytaniem, nie z pamieci.** Przed kazda analiza:
-  `SELECT MAX(date) FROM ...GSC_search_analytics_by_date`. Lista tabel nie mowi, czy plyna dane.
+  `SELECT MAX(date) FROM ...GSC_search_analytics_by_date` (albo `by_query`). Lista tabel nie mowi, czy plyna dane.
 - **Zanim orzekniesz, ze czegos nie ma**, przelec `__TABLES__` albo `INFORMATION_SCHEMA.TABLES`
-  po wszystkich datasetach i porownaj `last_modified_time`. Datasety `googleAds`, `gsc_export`,
-  `gsc_api` i `searchconsole_daniel` to porzucone stagingi (pierwszy pusty, `searchconsole_daniel`
-  siedzi w regionie US, wiec zapytanie z EU zwroci "dataset not found" - to nie jest blad uprawnien).
+  po wszystkich datasetach i porownaj `last_modified_time`. Datasety `gsc_export`, `gsc_api`
+  i `searchconsole_daniel` to porzucone stagingi (`searchconsole_daniel` siedzi w regionie US,
+  wiec zapytanie z EU zwroci "dataset not found" - to nie jest blad uprawnien).
+- **Eksport GA4 do BigQuery** (`analytics_<property_id>.events_*`) dla saketos.pl i saketos.de
+  zaczyna sie 23.07.2026. Analizy zdarzen (np. wyszukiwarka sklepu: `view_search_results`,
+  parametr `search_term`) obejmuja wiec tylko okres od tej daty, bez wczesniejszych szczytow sezonu.
 
-Otwarte: zlecenie na dolozenie `by_query` i `by_page` do zywego pipeline'u (18.09.2026, Krzysztof).
-Po jego wykonaniu ta tabela wymaga aktualizacji.
+W sesjach Claude w chmurze `bq` CLI nie jest uwierzytelnione; uzywaj narzedzi MCP BigQuery
+(`execute_sql_readonly`).
 
 ## Trzy pulapki metodologiczne, w ktore lam sie nie wpadac
 
