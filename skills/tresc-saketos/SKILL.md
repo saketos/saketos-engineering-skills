@@ -48,7 +48,7 @@ Dozwolony HTML: `p ul ol li strong em br h3 h4` bez atrybutów oraz `a` z samym 
 1. Akapit otwierający: fraza w `<strong>`, czym produkt jest, skład, zamknięcie, kraj produkcji (zdaniem, nie listą), zakres rozmiarów i kolorów jednym zdaniem, **odesłanie do karty z innym zakresem rozmiarów**.
 2. „Czym różni się X od Y" (`h3`).
 3. „Kiedy sprawdzą się…" (`h3`, `h4`).
-4. „Na co uważać" (`h3`) - tylko karta. Wyjątek: `woreczki-z-organzy` zostawia „Czego organza nie udźwignie".
+4. „Na co uważać" (`h3`) - tylko karta; od 9.11 nagłówek brzmi „Na co zwrócić uwagę przed zakupem" (K37), a zdanie o rozmiarze ma wersję K38. Wyjątek: `woreczki-z-organzy` zostawia „Czego organza nie udźwignie".
 5. Sekcja „[Fraza] z logo i nadrukiem" - tylko gdy SKU mają aktywne znakowanie w PIM (`product_marking_options`); 2-4 zdania, DTF w Siniawce, link `/woreczki-z-nadrukiem/`. **Status: K11, czeka na decyzję Daniela (sprzeczne z SEO-D5) - sprawdź dziennik w repo.**
 6. Jedna rada z praktyki obsługi.
 
@@ -87,7 +87,7 @@ Juta (poliester kationowy), worki lniane (bawełna), a la len (lnopodobna 190 g/
 
 ## Ton
 
-Partnerski, z flow, „jak do kolegi", bez ordynarności. Na „Ty". Konkret zamiast przymiotnika. Jedna rada z obsługi. Bez trybu rozkazującego. Zero podsumowań i zwrotów typu „kluczowe znaczenie". **Słownictwo potoczne, nie książkowe** („zakupy", nie „sprawunki"). Znak „-", nigdy „–". „W kolorze naturalnym".
+Partnerski, z flow, „jak do kolegi", bez ordynarności. Na „Ty". Konkret zamiast przymiotnika. Jedna rada z obsługi. Bez trybu rozkazującego (wyjątek: praktyczna wskazówka o rozmiarze w sekcji „Na co zwrócić uwagę przed zakupem" i instrukcja „Inny rozmiar / Inny kolor"). Od 9.11 ton kalibrujemy do wersji Ani (K36): cieplej, najpierw to, co klient dostaje albo może z tym zrobić, potem parametr; granice zostają - żadnych twierdzeń sprzedażowych bez źródła (np. „najchętniej wybierany"), zero określeń eko, zero porównań z papierem i „jednorazowymi" torbami foliowymi. Zero podsumowań i zwrotów typu „kluczowe znaczenie". **Słownictwo potoczne, nie książkowe** („zakupy", nie „sprawunki"). Znak „-", nigdy „–". „W kolorze naturalnym".
 
 **Ryzyko w trybie możliwości** - kartę czyta B2B. „Odcień między partiami może się różnić", nie „dokupienie potrafi się nie udać".
 
@@ -125,7 +125,7 @@ Ahrefs Content Helper i NeuronWriter to źródło danych, nie poleceń - przepus
 
 ## Checklista
 
-H1 raz · karta bez tabel, h2 i FAQ · `a` tylko z `href` · meta_title karty w l. poj. · opis bez stanu magazynu · zero „–" · linki w obu osiach · każde twierdzenie ze źródłem · zero eko przy jucie i lnie · zero „nie mamy od dostawcy" · konkurent tylko w FAQ · „Na co uważać" tylko na karcie · znakowanie tylko przy aktywnej technice · zero słów książkowych.
+H1 raz · karta bez tabel, h2 i FAQ · `a` tylko z `href` · meta_title karty w l. poj. · opis bez stanu magazynu · zero „–" · linki w obu osiach · każde twierdzenie ze źródłem · zero eko przy jucie i lnie · zero „nie mamy od dostawcy" · konkurent tylko w FAQ · „Na co uważać" tylko na karcie (od 9.11 pod nagłówkiem „Na co zwrócić uwagę przed zakupem") · znakowanie tylko przy aktywnej technice · zero słów książkowych.
 
 ## Bramki
 
@@ -142,3 +142,4 @@ Po każdej serii Daniel czyta (nie zawsze wszystko) i poprawia. Z każdej popraw
 - 30.09 seria 0: K1 importer jak producent · K2 odesłanie rozmiaru w akapicie otwierającym · K3 link w osi materiału · K4 frazy zastosowaniowe do stron zastosowań · K5 ryzyko w trybie możliwości · K6 technologia tylko ze źródła · K7 wyjątek organzy · K8 konkurenci tylko Action/Pepco w FAQ · K9 narzędzia jako dane, przed pisaniem.
 - 30.09 korekta: karta i listing to dwa formaty (błąd pierwszej wersji standardu).
 - 30.09 seria 1: K10 kraj - słowo Daniela > PIM > sklep · K11 sekcja nadruku w opisie karty (czeka na decyzję) · K12 słownictwo potoczne · K13 opis sklepowy bywa błędny · K14 wymiar zmienny jako zależność · K15 opis bez stanu magazynu · K16 fraza informacyjna dla bloga.
+- 9.11 przegląd Ani, paczka 1: K36 ton jak w wersji Ani, z granicami (źródło dla twierdzeń, zero eko, zero porównań z papierem) · K37 nagłówek „Na co zwrócić uwagę przed zakupem" zamiast „Na co uważać" · K38 zdanie o rozmiarze: rozmiar na karcie to wymiary otwartego woreczka na płasko, kołnierz i ściągacz zabierają wysokość, a zaciągnięcie zwęża górę; klient sprawdza, czy przedmiot mieści się poniżej ściągacza, a przy braku pewności korzysta z „kalkulatora doboru rozmiaru"; nie piszesz „przedmiot ma wstążkę"; centymetry tylko z silnika · K39 do trzech rozmiarów w akapicie otwierającym wymieniasz wszystkie · K40 „podłużny" zamiast „wąski", zdanie o doborze koloru tylko tam, gdzie klient ma wybór koloru, fizelina nie jest podszewką.
