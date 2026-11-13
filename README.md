@@ -61,3 +61,66 @@ Ta procedura mieszka więc przy pętli, w `saketos-mission-control`:
 
 Podział jest celowy: **tutaj to, co wywołuje Daniel; tam to, czego trzyma się
 wykonawca z repozytorium.**
+
+## Helper załączników: w runie, nie w checkout
+
+Instrukcje wykonawców Paperclipa bywają odsyłać do
+`skills/paperclip/scripts/paperclip-upload-artifact.sh`. Ten plik **nie istnieje
+w tym checkout** i nie może istnieć: skill `paperclip` instaluje runtime
+Paperclipa w katalogu tymczasowym danego runu, a nie z tego repozytorium.
+W checkout są tylko `skills/natural-writing`, `skills/saketos-data-context`,
+`skills/tresc-saketos`, `skills/zbriefuj-to` i `scripts/sprawdz-readme.sh`.
+Odtworzenie błędu (drukuje `brak`):
+
+```sh
+test -f skills/paperclip/scripts/paperclip-upload-artifact.sh && echo jest || echo brak
+```
+
+**Jak znaleźć helpera.** Leży on w katalogu `SKILL.md` skilla `paperclip`
+faktycznie dostarczonego w bieżącym runie. Uruchomienie skilla zgłasza ścieżkę
+jego `SKILL.md` — bierz ją z kontekstu tego runu, nigdy z pamięci poprzedniego.
+Katalog zawiera identyfikator runu i zmienia się za każdym razem, więc nie
+zapisuj takich ścieżek w plikach repo ani w komentarzach.
+
+```sh
+# SCIEZKA_SKILL_MD — ścieżka SKILL.md raportowana przy wywołaniu skilla w tym runie
+skill_dir=$(dirname "$SCIEZKA_SKILL_MD")
+helper="$skill_dir/scripts/paperclip-upload-artifact.sh"
+test -f "$helper" && echo "helper: $helper"
+```
+
+**Jak uruchomić.** Przez `bash` — instalowane pliki mogą nie zachować bitu
+wykonywalności. Helper używa zmiennych środowiskowych runu
+(`PAPERCLIP_API_URL`, `PAPERCLIP_API_KEY`, `PAPERCLIP_COMPANY_ID`,
+`PAPERCLIP_TASK_ID`, `PAPERCLIP_RUN_ID`); ich wartości zostają w runie —
+nie wklejaj tokenów do plików w repo.
+
+```sh
+bash "$helper" sciezka/do/wyniku.png \
+  --title "Tytuł deliverable" \
+  --summary "Co plik zawiera" \
+  --dry-run
+```
+
+`--dry-run` wypisuje rozwiązane ustawienia uploadu bez wywołania API — tak
+sprawdza się składnię polecenia bez próbnego uploadu.
+
+**Attachment i artifact work product.** Helper wgrywa plik jako załącznik
+issue, tworzy work product `artifact` z nim związany i drukuje markdown linki
+bezpieczne dla komentarza. Dostarczenie pliku to dwa powiązane byty:
+załącznik (plik trzymany po stronie Paperclipa, dostępny poza workspace)
+i work product `artifact` (ścieżka dostępu do przeglądu dla boardu i recenzenta
+— komentarz jej nie zastępuje). Obowiązek: końcowy komentarz zawiera link do
+załącznika albo work productu; lokalna ścieżka w workspace nie jest samodzielną
+drogą dostępu.
+
+**Gdy helpera brak.** Nie kopiuj skilla runtime do tego repo — kopie się
+zestarzeją, a Paperclip i tak instaluje skill w każdym runie. Użyj oficjalnego
+workflow z `references/artifacts.md` tego skilla: najpierw multipart upload
+załącznika na `/api/companies/<companyId>/issues/<taskId>/attachments`
+(nagłówki autoryzacji i `X-Paperclip-Run-Id`), potem work product na
+`/api/issues/<taskId>/work-products` z
+`{"type": "artifact", "provider": "paperclip", "metadata": {"attachmentId": "<id>"}}`.
+Plik, który celowo zostaje w workspace, opisuje work product z
+`metadata.resourceRef.kind: "workspace_file"` i ścieżką względną — nie
+absolutną.
